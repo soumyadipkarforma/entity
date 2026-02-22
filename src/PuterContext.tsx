@@ -7,8 +7,6 @@ declare global {
     }
 }
 
-const puter = window.puter;
-
 interface PuterContextType {
     isSignedIn: boolean;
     user: any;
