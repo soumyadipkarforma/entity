@@ -31,50 +31,57 @@ export const PuterProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     useEffect(() => {
         const init = async () => {
-            if (window.puter) {
-                const signedIn = await window.puter.auth.isSignedIn();
-                setIsSignedIn(signedIn);
-                if (signedIn) {
-                    const userData = await window.puter.auth.getUser();
-                    setUser(userData);
-                    
-                    // Initialize VM
-                    const vmManager = new V86Manager(() => console.log("VM Ready"));
-                    await vmManager.boot();
-                    setVm(vmManager);
+            try {
+                if (window.puter) {
+                    const signedIn = await window.puter.auth.isSignedIn();
+                    setIsSignedIn(signedIn);
+                    if (signedIn) {
+                        const userData = await window.puter.auth.getUser();
+                        setUser(userData);
+                        
+                        // Initialize VM - Non-blocking
+                        try {
+                            const vmManager = new V86Manager(() => console.log("VM Ready"));
+                            vmManager.boot(); // Don't await boot here to prevent hang
+                            setVm(vmManager);
+                        } catch (e) { console.error("VM Init failed", e); }
 
-                    // Initialize DB Manager (Configuration would normally use user info)
-                    // This is a placeholder for the actual private repo logic
-                    const dbManager = new DBManager({
-                        repoUrl: `https://github.com/${userData.username}/entity-db.git`,
-                        dbPath: "db.sqlite3.xz",
-                        migrationsPath: "migrations/",
-                        metadataPath: "metadata.json"
-                    });
-                    // await dbManager.initialize(); // Deferred until token is available
-                    setDb(dbManager);
+                        // Initialize DB Manager - Configuration
+                        const dbManager = new DBManager({
+                            repoUrl: `https://github.com/${userData.username}/entity-db.git`,
+                            dbPath: "db.sqlite3.xz",
+                            migrationsPath: "migrations/",
+                            metadataPath: "metadata.json"
+                        });
+                        setDb(dbManager);
+                    }
                 }
+            } catch (error) {
+                console.error("Critical Init Error:", error);
+            } finally {
+                setLoading(false);
             }
-            setLoading(false);
         };
         init();
     }, []);
 
     const signIn = async () => {
-        await window.puter.auth.signIn();
-        window.location.reload();
+        try {
+            await window.puter.auth.signIn();
+            window.location.reload();
+        } catch (e) { console.error(e); }
     };
 
     const signOut = async () => {
-        await window.puter.auth.signOut();
-        setIsSignedIn(false);
-        setUser(null);
+        try {
+            await window.puter.auth.signOut();
+            setIsSignedIn(false);
+            setUser(null);
+        } catch (e) { console.error(e); }
     };
 
-    // Agent Tools definition
     const tools = {
         readFile: async (path: string) => {
-            // Priority: Local FS (Puter) -> VM
             try { return await window.puter.fs.read(path); }
             catch { return await vm?.readFile(path); }
         },
@@ -88,7 +95,6 @@ export const PuterProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         execInVM: async (command: string) => {
             return await vm?.exec(command);
         },
-        // Placeholder for GitHub CI/Auth integrations
         invokeCI: async (workflow: string, inputs: any) => {
             console.log(`Invoking CI: ${workflow}`, inputs);
         },
@@ -103,10 +109,17 @@ export const PuterProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     };
 
-    if (loading) return <div className="min-h-screen bg-[#020203] flex items-center justify-center text-indigo-500 font-black animate-pulse">SYNCHRONIZING ENTITY...</div>;
+    if (loading) return (
+        <div className="min-h-screen bg-[#020203] flex flex-col items-center justify-center text-indigo-500 font-black gap-4">
+            <div className="h-1 w-48 bg-white/5 rounded-full overflow-hidden">
+                <div className="h-full agent-gradient animate-pulse" style={{width: '60%'}} />
+            </div>
+            <span className="text-[10px] tracking-[0.3em] uppercase">Synchronizing Entity...</span>
+        </div>
+    );
 
     return (
-        <PuterContext.Provider value={{ isSignedIn, user, signIn, signOut, ai: window.puter.ai, kv: window.puter.kv, vm, db, tools }}>
+        <PuterContext.Provider value={{ isSignedIn, user, signIn, signOut, ai: window.puter?.ai, kv: window.puter?.kv, vm, db, tools }}>
             {children}
         </PuterContext.Provider>
     );
